@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subway Runner</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #87CEEB;
+        }
+        
+        #game-container {
+            position: relative;
+            width: 800px;
+            height: 400px;
+            overflow: hidden;
+            border: 3px solid #333;
+        }
+        
+        #player {
+            position: absolute;
+            width: 80px;
+            height: 120px;
+            bottom: 50px;
+            left: 100px;
+            background-image: url('player.png');
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+        
+        .obstacle {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            bottom: 50px;
+            background-size: cover;
+        }
+        
+        #background {
+            position: absolute;
+            width: 2400px; /* 3x the container width for seamless scrolling */
+            height: 100%;
+            background-image: url('background.png');
+            background-repeat: repeat-x;
+            background-size: 800px 400px;
+        }
+        
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            color: white;
+            text-shadow: 2px 2px 4px #000;
+        }
+        
+        #game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            font-family: Arial, sans-serif;
+            color: red;
+            text-shadow: 2px 2px 4px #000;
+            display: none;
+        }
+        
+        #retry-button {
+            position: absolute;
+            top: 60%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px 20px;
+            font-size: 24px;
+            font-family: Arial, sans-serif;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: none;
+        }
+        
+        #retry-button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="background"></div>
+        <div id="player"></div>
+        <div id="score">Score: 0</div>
+        <div id="game-over">GAME OVER</div>
+        <button id="retry-button">RETRY</button>
+    </div>
+
+    <script>
+        // Game variables
+        let player = document.getElementById('player');
+        let gameContainer = document.getElementById('game-container');
+        let background = document.getElementById('background');
+        let scoreDisplay = document.getElementById('score');
+        let gameOverDisplay = document.getElementById('game-over');
+        let retryButton = document.getElementById('retry-button');
+        let score = 0;
+        let isJumping = false;
+        let gameSpeed = 2; // Reduced initial speed for obstacles
+        let backgroundSpeed = 1; // Slower background scrolling speed
+        let gameRunning = false; // Game doesn't start automatically
+        let backgroundPos = 0;
+        let playerPos = 100; // Initial horizontal position
+        
+        // Audio
+        let audio = new Audio('audio.mp3');
+        audio.loop = true;
+        
+        // Obstacle images
+        const obstacleImages = ['manager.png', 'ticket.png', 'musk.png'];
+        
+        // Start the game
+        function startGame() {
+            if (gameRunning) return; // Don't start if already running
+            
+            gameRunning = true;
+            audio.play().catch(e => {
+                console.log("Audio play failed:", e);
+                // Try playing on user interaction as fallback
+                document.addEventListener('click', () => {
+                    audio.play().catch(e => console.log("Audio still failed:", e));
+                }, { once: true });
+            });
+            createObstacle();
+            gameLoop();
+        }
+        
+        // Game loop
+        function gameLoop() {
+            if (!gameRunning) return;
+            
+            // Move background (slower)
+            backgroundPos -= backgroundSpeed;
+            if (backgroundPos <= -1600) {
+                backgroundPos = 0;
+            }
+            background.style.left = backgroundPos + 'px';
+            
+            // Move obstacles
+            let obstacles = document.querySelectorAll('.obstacle');
+            obstacles.forEach(obstacle => {
+                let obstacleLeft = parseInt(obstacle.style.left);
+                
+                // If obstacle moves off screen, remove it
+                if (obstacleLeft < -150) {
+                    obstacle.remove();
+                    score++;
+                    scoreDisplay.textContent = 'Score: ' + score;
+                    gameSpeed += 0.1; // Increase game speed
+                } else {
+                    obstacle.style.left = (obstacleLeft - gameSpeed) + 'px';
+                }
+                
+                // Check for collision
+                if (isColliding(player, obstacle)) {
+                    gameOver();
+                }
+            });
+            
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Create a new obstacle
+        function createObstacle() {
+            if (!gameRunning) return;
+            
+            const obstacle = document.createElement('div');
+            obstacle.className = 'obstacle';
+            
+            // Randomly select an obstacle image
+            const randomImage = obstacleImages[Math.floor(Math.random() * obstacleImages.length)];
+            obstacle.style.backgroundImage = `url('${randomImage}')`;
+            
+            obstacle.style.left = '800px';
+            gameContainer.appendChild(obstacle);
+            
+            // Create next obstacle after a random delay (longer delay for slower approach)
+            const randomDelay = Math.random() * 3000 + 2000; // Increased delay
+            setTimeout(createObstacle, randomDelay);
+        }
+        
+        // Jump function
+        function jump() {
+            if (!gameRunning) {
+                startGame(); // Start game on first jump
+                return;
+            }
+            
+            if (isJumping) return;
+            isJumping = true;
+            
+            let jumpHeight = 0;
+            let jumpUp = true;
+            let forwardMomentum = 0;
+            let maxJumpHeight = 150; // Fixed jump height
+            
+            function jumpAnimation() {
+                if (jumpUp) {
+                    jumpHeight += 2; // Even slower upward movement
+                    forwardMomentum += 0.2; // Slower forward momentum
+                    if (jumpHeight >= maxJumpHeight) {
+                        jumpUp = false;
+                        // Add a slight pause at the top of the jump
+                        setTimeout(() => {
+                            requestAnimationFrame(jumpAnimation);
+                        }, 100);
+                        return;
+                    }
+                } else {
+                    jumpHeight -= 1.5; // Very slow downward movement
+                    forwardMomentum -= 0.15; // Slower backward momentum
+                    if (jumpHeight <= 0) {
+                        jumpHeight = 0;
+                        isJumping = false;
+                        // Reset player horizontal position
+                        playerPos = 100;
+                        player.style.left = playerPos + 'px';
+                        return;
+                    }
+                }
+                
+                // Apply forward momentum
+                playerPos += forwardMomentum;
+                if (playerPos > 200) playerPos = 200; // Limit forward movement
+                
+                player.style.bottom = (50 + jumpHeight) + 'px';
+                player.style.left = playerPos + 'px';
+                requestAnimationFrame(jumpAnimation);
+            }
+            
+            requestAnimationFrame(jumpAnimation);
+        }
+        
+        // Collision detection
+        function isColliding(a, b) {
+            const aRect = a.getBoundingClientRect();
+            const bRect = b.getBoundingClientRect();
+            
+            // Create a much smaller hitbox for the player (50% smaller on all sides)
+            const playerHitbox = {
+                top: aRect.top + aRect.height * 0.3,
+                bottom: aRect.bottom - aRect.height * 0.3,
+                left: aRect.left + aRect.width * 0.3,
+                right: aRect.right - aRect.width * 0.3
+            };
+            
+            // Create a smaller hitbox for the obstacle (20% smaller on all sides)
+            const obstacleHitbox = {
+                top: bRect.top + bRect.height * 0.2,
+                bottom: bRect.bottom - bRect.height * 0.2,
+                left: bRect.left + bRect.width * 0.2,
+                right: bRect.right - bRect.width * 0.2
+            };
+            
+            return !(
+                playerHitbox.bottom < obstacleHitbox.top ||
+                playerHitbox.top > obstacleHitbox.bottom ||
+                playerHitbox.right < obstacleHitbox.left ||
+                playerHitbox.left > obstacleHitbox.right
+            );
+        }
+        
+        // Game over function
+        function gameOver() {
+            gameRunning = false;
+            audio.pause();
+            gameOverDisplay.style.display = 'block';
+            retryButton.style.display = 'block';
+        }
+        
+        // Reset game function
+        function resetGame() {
+            // Reset game variables
+            score = 0;
+            gameSpeed = 2;
+            backgroundPos = 0;
+            playerPos = 100;
+            
+            // Reset display
+            scoreDisplay.textContent = 'Score: 0';
+            gameOverDisplay.style.display = 'none';
+            retryButton.style.display = 'none';
+            
+            // Remove all obstacles
+            document.querySelectorAll('.obstacle').forEach(obstacle => {
+                obstacle.remove();
+            });
+            
+            // Reset player position
+            player.style.bottom = '50px';
+            player.style.left = playerPos + 'px';
+            
+            // Start game again
+            startGame();
+        }
+        
+        // Event listeners
+        document.addEventListener('keydown', function(event) {
+            if (event.code === 'Space') {
+                event.preventDefault();
+                jump();
+            }
+        });
+        
+        retryButton.addEventListener('click', resetGame);
+    </script>
+</body>
+</html>
